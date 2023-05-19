@@ -1,0 +1,268 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Data.SqlClient;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Windows.Forms;
+
+namespace caixaDeTexto
+{
+    public partial class Form1 : DevExpress.XtraEditors.XtraForm
+    {
+        public string variaveis = "";
+        public Form1()
+        {
+            InitializeComponent();
+        }
+
+
+
+        private void Form1_Load(object sender, EventArgs e)
+        {
+
+
+
+        }
+
+
+        private void simpleButton1_Click(object sender, EventArgs e)
+        {
+
+            // Recuperação do nome da tabela a partir do TextBox2
+            string tableNameOrigem = textBox2.Text;
+            string tableNameDestino = textBox3.Text;
+
+            // Leitura da string de conexão do arquivo de texto
+            string connectionStringOrigem = File.ReadAllText("connectionstringOrigem.txt");
+            string connectionStringDestino = File.ReadAllText("connectionstringDestino.txt");
+
+            Match match = Regex.Match(connectionStringOrigem, @"Catalog=([^;]+)");
+            string dbOrigem = match.Groups[1].Value;
+
+            Match match1 = Regex.Match(connectionStringDestino, @"Catalog=([^;]+)");
+            string dbDestino = match1.Groups[1].Value;
+
+            // Criação da conexão
+            using (SqlConnection connection = new SqlConnection(connectionStringOrigem))
+            {
+                // Abertura da conexão
+                connection.Open();
+
+                // Preparação do comando SQL para recuperar as colunas da tabela especificada
+                string sql = $"SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{tableNameOrigem}'";
+                using (SqlCommand command = new SqlCommand(sql, connection))
+                {
+                    using (SqlDataReader reader = command.ExecuteReader())
+                    {
+                        // Criação de uma lista de objetos ColumnInfo com informações das colunas
+                        List<ColumnInfo> columns = new List<ColumnInfo>();
+                        while (reader.Read())
+                        {
+                            ColumnInfo col = new ColumnInfo();
+                            col.Name = reader.GetString(0);
+                            col.DataType = reader.GetString(1);
+                            columns.Add(col);
+                        }
+
+                        // Verifica se a lista de colunas está vazia
+                        if (columns.Count == 0)
+                        {
+                            MessageBox.Show("Tabela origem não encontrada.");
+                            return;
+                        }
+
+                        // Cria a string de saída formatada na forma desejada
+                        StringBuilder sb = new StringBuilder();
+                        sb.AppendLine($@"using Core.Con;
+using Core.OGlobais;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.Common;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace Core.BDToClass.{dbOrigem}
+{{
+[Serializable]
+public class DB{tableNameOrigem} : cTabela
+
+//ORIGEM      
+
+{{");
+
+                        foreach (ColumnInfo col in columns)
+                        {
+                            sb.AppendLine($"public {col.DataType} {col.Name} {{ get; set; }}");
+                        }
+                        sb.AppendLine(@" 
+//DESTINO      
+
+                                ");
+                        // Criação da conexão de destino
+                        using (SqlConnection connectionDestino = new SqlConnection(connectionStringDestino))
+                        {
+                            // Abertura da conexão de destino
+                            connectionDestino.Open();
+
+                            // Preparação do comando SQL para recuperar as colunas da tabela de destino
+                            string sqlDestino = $"SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{tableNameDestino}'";
+                            using (SqlCommand commandDestino = new SqlCommand(sqlDestino, connectionDestino))
+                            {
+                                using (SqlDataReader readerDestino = commandDestino.ExecuteReader())
+                                {
+                                    // Criação de uma lista de objetos ColumnInfo com informações das colunas de destino
+                                    List<ColumnInfo> columnsDestino = new List<ColumnInfo>();
+                                    while (readerDestino.Read())
+                                    {
+                                        ColumnInfo colDestino = new ColumnInfo();
+                                        colDestino.Name = readerDestino.GetString(0);
+                                        colDestino.DataType = readerDestino.GetString(1);
+                                        columnsDestino.Add(colDestino);
+                                    }
+
+                                    // Verifica se a lista de colunas está vazia
+                                    if (columnsDestino.Count == 0)
+                                    {
+                                        MessageBox.Show("Tabela de destino não encontrada.");
+                                        return;
+                                    }
+
+                                    // Adiciona as colunas de destino à string de saída
+                                    foreach (ColumnInfo colDestino in columnsDestino)
+                                    {
+                                        sb.AppendLine($"public {colDestino.DataType} {colDestino.Name}Destino {{ get; set; }}");
+                                    }
+                                }
+                            }
+                        }
+
+
+
+
+
+                        sb.AppendLine(@"
+
+
+
+
+            public override void SelectFromOrigin(cGlobais pGlobais = null)
+        {
+            LoadGlobais(pGlobais);
+
+            //SELECT * from vImporta_Viatura_Modelos WHERE IGID = @IGID
+            vQuery = ""SELECT * from *view* WHERE IGID = @IGID"";
+
+            //ID depende de tabela para tabela
+            vDataOrigem.AddParameter(""@IGID"", System.Data.DbType.Int32, ID, " + dbOrigem + @");
+
+            DataTable vDataTable = vDataOrigem.GetDataTable(vQuery, " + dbOrigem + @", vDataOrigem.GetAddParameter(), out vErro);
+
+            if (!Validate(vDataTable))
+                return;
+
+            GetField vReg = new GetField(vDataTable.Rows[0]);
+
+            //Inserir valores para cada coluna
+            /*IGID = vReg[""IGID""].ToInt32();
+            MARCACD = vReg[""MARCACD""].ToString();
+            MODELOCD = vReg[""MODELOCD""].ToString();
+            MODELODS = vReg[""MODELODS""].ToString();*/
+        }
+        public override void Delete(cGlobais pGlobais = null)
+        {
+            //Nao trocar nada nem inserir fuções
+            LoadGlobais(vGlobais);
+        }
+        protected override bool CheckUpdate()
+        {
+            //SELECT * from VIATURAMARCAMODELO WHERE IGID = @IGID
+            vQuery = ""SELECT * from *" + tableNameDestino + @"* WHERE IGID = @IGID"";
+            
+            vDataDestino.AddParameter(""@IGID"", System.Data.DbType.Int32, IGID, " + dbDestino + @");
+
+            DataTable vDataTable = vDataDestino.GetDataTable(vQuery, " + tableNameDestino + @", vDataDestino.GetAddParameter(), out vErro);
+
+            return Validate(vDataTable);
+        }
+        protected override void Insert()
+        {
+            //INSERT INTO VIATURAMARCAMODELO([IGID],[MARCACD],[MODELOCD],[MODELODS]) VALUES (@IGID,@MARCACD,@MODELOCD ,@MODELODS)
+            vQuery = ""INSERT INTO *" + tableNameDestino + @"*([IGID],[MARCACD],[MODELOCD],[MODELODS]) VALUES (@IGID,@MARCACD,@MODELOCD ,@MODELODS)"";
+
+            //Adicionar valores as colunas
+            /*vDataDestino.AddParameter(""@IGID"", DbType.Int32, ID, " + dbDestino + @");
+            vDataDestino.AddParameter(""@MARCACD"", DbType.String, MARCACD, " + dbDestino + @");
+            vDataDestino.AddParameter(""@MODELOCD"", DbType.String, MODELOCD, " + dbDestino + @");
+            vDataDestino.AddParameter(""@MODELODS"", DbType.String, MODELODS, " + dbDestino + @");*/
+
+            vDataDestino.ExecCommand(vQuery, dbDestino, Core.Con.cData.CmdQuery.Scalar, vDataDestino.GetAddParameter(), null, out vErro);
+        }
+        protected override void Update()
+        {
+            //UPDATE VIATURAMARCAMODELO SET MARCACD = @MARCACD, MODELOCD = @MODELOCD, MODELODS = @MODELODS WHERE IGID = @IGID
+            vQuery = ""UPDATE *" + tableNameDestino + @"* SET MARCACD = @MARCACD, MODELOCD = @MODELOCD, MODELODS = @MODELODS WHERE IGID = @IGID"";
+
+            //Adicionar valores as colunas
+            /*vDataDestino.AddParameter(""@IGID"", DbType.Int32, ID, " + dbDestino + @");
+            vDataDestino.AddParameter(""@MARCACD"", DbType.String, MARCACD, " + dbDestino + @");
+            vDataDestino.AddParameter(""@MODELOCD"", DbType.String, MODELOCD, " + dbDestino + @");
+            vDataDestino.AddParameter(""@MODELODS"", DbType.String, MODELODS, " + dbDestino + @");*/
+
+            vDataDestino.ExecCommand(vQuery, dbDestino, Core.Con.cData.CmdQuery.Scalar, vDataDestino.GetAddParameter(), null, out vErro);
+        }
+
+        protected override void CreateTable()
+        {
+            //Criar tabela
+          /*  vQuery = ""CREATE TABLE *" + tableNameDestino + @"* ( [MODELOID] [int] IDENTITY(1,1) NOT NULL, [IGID] [int] NULL, [MARCACD] "" +
+                ""[varchar](250) NOT NULL, [MODELOCD] [varchar](250) NOT NULL, [MODELODS] [varchar](250) NOT NULL, [IMTOK] [char](1) "" +
+                ""NULL, [IMTDT] [datetime] NULL, [IMTCD] [varchar](50) NULL, CONSTRAINT [PK_VIATURAMARCAMODELO] PRIMARY KEY CLUSTERED "" +
+                ""( [MARCACD] ASC, [MODELOCD] ASC )WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS"" +
+                "" = ON, ALLOW_PAGE_LOCKS = ON) ON [PRIMARY] ) ON [PRIMARY]"";
+
+            vDataDestino.ExecCommand(vQuery, " + dbDestino + @", Core.Con.cData.CmdQuery.Scalar, vDataDestino.GetAddParameter(), null, out vErro); */
+        }
+        protected override string GetTableName()
+        {
+            //Nome da Tabela de Destino
+            return " + tableNameDestino + @";
+        }
+    }
+}
+ 
+");
+                        string output = sb.ToString();
+
+                        // Exibe a string de saída no textBox1
+                        textBox1.Text = output;
+                    }
+                }
+            }
+        }
+
+
+        public class ColumnInfo
+        {
+            public string Name { get; set; }
+            public string DataType { get; set; }
+        }
+
+        private void simpleButton2_Click(object sender, EventArgs e)
+        {
+            Clipboard.SetText(textBox1.Text);
+        }
+
+        private void textBox2_TextChanged(object sender, EventArgs e)
+        {
+
+        }
+    }
+}

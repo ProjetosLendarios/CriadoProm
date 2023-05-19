@@ -1,0 +1,1 @@
+Data Source=94.46.178.131\MSSQLSERVER2017;Initial Catalog=CARTESTSMF;User id=sa;Password=GFABTCwsqYmCcTXTMOzn;
